@@ -90,3 +90,167 @@ Seu guia passo a passo em formato Markdown (README.md) e sua planilha de acompan
 [file-tag: code-generated-file-99180112-79df-4e0d-ab6f-ee6e8246e10f]
 ​Planilha de Desafios e Soluções (CSV):
 [file-tag: code-generated-file-6e397a1b-7024-4cb6-8662-774084b991a6]
+
+Hyperliquid com DEEPSEEK
+Lista Atualizada de Etapas (Setup Completo Hyperliquid Testnet + Bot)
+Este é o roteiro definitivo, incluindo ações manuais na plataforma, comandos no terminal e orientações para a IA que for auxiliar nas próximas versões. Seguindo esta ordem, você não enfrentará os mesmos erros.
+
+🔹 1. Conta e Carteira
+Ação na plataforma:
+
+Tenha uma carteira Ethereum (Rabby, MetaMask) configurada para a testnet da Hyperliquid (chain Arbitrum Sepolia).
+
+Crie/importe uma conta com saldo de gás (ETH de Sepolia) se necessário, mas o faucet da Hyperliquid geralmente fornece USDC diretamente, sem exigir gás.
+
+Nota para a IA: Certifique-se de que o endereço da carteira está acessível e que a chave privada pode ser exportada.
+
+🔹 2. Faucet (Obter USDC de Teste)
+Ação na plataforma:
+
+Acesse https://testnet.hyperliquid.xyz com a carteira.
+
+Vá até o faucet oficial (ou use o link da documentação) e solicite USDC para o endereço da carteira.
+
+O saldo aparece em Spot (não em Perp).
+
+Importante: O valor solicitado (ex: 999 USDC) estará disponível apenas na carteira Spot. Ele não pode ser usado diretamente para ordens de futuros (perpétuos).
+
+🔹 3. Criar API Wallet (conta separada para o bot)
+Ação na plataforma:
+
+Dentro da interface da Hyperliquid, vá em API Wallets (Settings → API).
+
+Clique em Create API Wallet. Serão exibidos:
+
+Endereço da API Wallet
+
+Chave privada (aparece apenas uma vez – copie e guarde)
+
+Essa chave privada será usada no bot, não a chave da sua carteira principal.
+
+Por quê? A API Wallet é um endereço interno que opera em nome da sua conta principal, mas com permissões limitadas. O saldo precisa ser enviado da conta principal para ela.
+
+🔹 4. Transferir fundos da Conta Principal → API Wallet (Spot)
+Ação na plataforma:
+
+Com a conta principal conectada, faça uma Internal Transfer (dentro da rede Hyperliquid) de USDC do Spot da conta principal para o Spot da API Wallet.
+
+Destino: endereço da API Wallet (ex: 0xFf4...).
+
+Quantidade sugerida: pelo menos 100 USDC para testes.
+
+Validação: Na interface da Hyperliquid, alterne para a API Wallet (importando-a com a chave privada, se necessário) e verifique que o saldo Spot aparece.
+
+🔹 5. Transferir USDC do Spot → Perp (Margem) dentro da API Wallet
+Ação na plataforma:
+
+Ainda conectado como API Wallet, vá em Portfolio → Transfer.
+
+From: Spot
+
+To: Perpetuals (ou Cross Margin)
+
+Amount: 50 USDC (por exemplo).
+
+Confirme a transação.
+
+Validação: No terminal (com o SDK), execute:
+
+bash
+python -c "from exchange_api import ExchangeAPI; api = ExchangeAPI(); print(api.obter_saldo_total())"
+Deverá retornar o valor transferido (ex: 50.0). Isso confirma que a margem está habilitada.
+
+🔹 6. Configurar o Servidor (estrutura do bot)
+Ações no terminal (ordem exata):
+
+bash
+
+
+# Criar diretório e venv
+mkdir -p ~/bot_trading && cd ~/bot_trading
+python3 -m venv venv
+source venv/bin/activate
+
+# Instalar dependências essenciais
+pip install flask eth-account web3 python-dotenv requests
+
+# Instalar SDK oficial da Hyperliquid
+pip install hyperliquid-python-sdk
+
+
+
+Arquivos necessários (criar via nano):
+
+.env contendo PRIVATE_KEY=0x... (chave privada da API Wallet).
+
+exchange_api.py (versão final com SDK, já fornecida abaixo).
+
+app.py (Flask + lógica de trading, fornecida abaixo).
+
+bot_gestao.py (gestão de banca, fornecida abaixo).
+
+config/parametros.json e utils/db_manager.py (arquivos de suporte, já fornecidos anteriormente).
+
+Nota para a IA: Esses arquivos já foram testados e aprovados. Para evitar perda de tempo, use as versões mais recentes fornecidas no histórico.
+
+🔹 7. Testar Ordem Manual (via SDK)
+
+bash
+
+
+
+cd ~/bot_trading && source venv/bin/activate
+python -c "from exchange_api import ExchangeAPI; print(ExchangeAPI().criar_ordem('JUP','short',50.0))"
+
+
+
+Regra de ouro: O valor nocional da ordem (preço × quantidade) deve ser ≥ 10 USD. Ajuste a quantidade conforme o preço do ativo.
+
+🔹 8. Subir o Sistema Completo
+Três terminais:
+
+Flask: python app.py
+
+Túnel: cloudflared tunnel --url localhost:5000
+
+Gestão: python bot_gestao.py
+
+Teste com curl:
+
+bash
+
+
+curl -X POST https://<URL_TUNEL>/webhook \
+  -H "Content-Type: application/json" \
+  -d '{"ativo":"JUP","direcao":"short","entrada":0.20,"stop_loss":0.21,"take_profit":0.19}'
+
+
+Neste momento, o bot enviará a ordem automaticamente.
+
+🧭 Orientações para a IA (Resumo de Erros Comuns e Soluções)
+Nunca pule a transferência Spot → Perp. Ordens de perpétuo exigem saldo na margem.
+
+Use sempre o SDK oficial, não tente assinar EIP-712 manualmente (a estrutura muda com frequência).
+
+A API Wallet é obrigatória para o bot; não use a chave da carteira principal.
+
+Valor mínimo de ordem: 10 USD nocionais. Se o pote calculado pelo gestor for menor que isso, ajuste a faixa de alocação ou defina um floor mínimo.
+
+Importação da API Wallet no Rabby: Se a Hyperliquid não mostrar a API Wallet, adicione a chave privada no Rabby e alterne a conta ativa. O site lê a conta selecionada na carteira.
+
+Endpoints corretos: saldo spot via spotClearinghouseState; saldo margem via clearinghouseState.
+
+Nunca use rm + nano sem antes verificar se o arquivo está atualizado. Mantenha backups.
+
+Para testes rápidos, use python -c "..." em vez de subir Flask.
+
+📦 Containerização (Docker) – Próximo Passo
+Assim que o sistema completo estiver operando, posso gerar um Dockerfile e um docker-compose.yml simples, contendo:
+
+O projeto inteiro (~/bot_trading).
+
+O venv (ou recriação das dependências).
+
+Os bots rodando em segundo plano (Flask, gestão, túnel).
+
+Isso permitirá que você copie a imagem para qualquer servidor e execute com um único comando. Podemos fazer isso na próxima iteração.
